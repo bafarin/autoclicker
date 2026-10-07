@@ -14,7 +14,6 @@ section '.data' data readable writeable
     btn_stop_text   db 'STOP', 0
     default_delay   db '1500', 0
     filename        db 'settings.txt', 0
-    mark_LMB        db 'LMB', 0
     wc              WNDCLASS
     msg             MSG
     str_ms          db 'milliseconds', 0
@@ -41,6 +40,7 @@ start:
     mov [wc.lpfnWndProc], WindowProc
     invoke LoadCursor, 0, IDC_ARROW
     mov [wc.hCursor], eax
+    mov [wc.hbrBackground], COLOR_WINDOW-2
     mov [wc.lpszClassName], class_name
     invoke RegisterClass, wc
 
@@ -224,80 +224,117 @@ proc WindowProc hwnd, wmsg, wparam, lparam
 endp
 
 proc LoadSettings
-    push    esi ebx ecx edx
+    push esi ebx ecx edx
+    invoke CreateFileA, filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0
+    cmp eax, INVALID_HANDLE_VALUE
+    je .exit_proc
+    mov [file_handle], eax
 
-    invoke  CreateFileA, filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0
-    cmp     eax, INVALID_HANDLE_VALUE
-    je      .exit_proc
-    mov     [file_handle], eax
+    invoke ReadFile, [file_handle], file_buffer, 511, bytes_read, 0
+    test eax, eax
+    jz .close_file
 
-    invoke  ReadFile, [file_handle], file_buffer, 511, bytes_read, 0
-    test    eax, eax
-    jz      .close_file
+    mov ebx, [bytes_read]
+    mov byte [file_buffer + ebx], 0
+    invoke CloseHandle, [file_handle]
 
-    mov     ebx, [bytes_read]
-    mov     byte [file_buffer + ebx], 0
-    invoke  CloseHandle, [file_handle]
+    lea esi, [file_buffer]
 
-    lea     esi, [file_buffer]
 .parse_lines:
-    mov     al, [esi]
-    test    al, al
-    jz      .exit_proc
-    cmp     al, 13
-    je      .step_char
-    cmp     al, 10
-    je      .step_char
-    jmp     .check_lmb
+    mov al, [esi]
+    test al, al
+    jz .exit_proc
+    cmp al, 13
+    je .step_char
+    cmp al, 10
+    je .step_char
+    jmp .check_lmb
 
 .step_char:
-    inc     esi
-    jmp     .parse_lines
+    inc esi
+    jmp .parse_lines
 
 .check_lmb:
-    cmp     dword [esi], 'LMB:'
-    jne     .check_rmb
-    add     esi, 4
-    call    ParseHexValue
-    cmp     eax, -1
-    je      .skip_line
-    mov     [hotkey_LMB], eax
-    jmp     .skip_line
+    cmp dword [esi], 'LMB:'
+    jne .check_rmb
+    add esi, 4
+    call ParseHexValue
+    cmp eax, -1
+    je .skip_line
+    mov [hotkey_LMB], eax
+    jmp .skip_line
 
 .check_rmb:
-    cmp     dword [esi], 'RMB:'
-    jne     .check_f
-    add     esi, 4
-    call    ParseHexValue
-    cmp     eax, -1
-    je      .skip_line
-    mov     [hotkey_RMB], eax
-    jmp     .skip_line
+    cmp dword [esi], 'RMB:'
+    jne .check_f
+    add esi, 4
+    call ParseHexValue
+    cmp eax, -1
+    je .skip_line
+    mov [hotkey_RMB], eax
+    jmp .skip_line
 
 .check_f:
-    cmp     word [esi], 'F:'
-    jne     .skip_line
-    add     esi, 2
-    call    ParseHexValue
-    cmp     eax, -1
-    je      .skip_line
-    mov     [hotkey_F], eax
+    cmp word [esi], 'F:'
+    jne .check_timer
+    add esi, 2
+    call ParseHexValue
+    cmp eax, -1
+    je .skip_line
+    mov [hotkey_F], eax
+    jmp .skip_line
+
+.check_timer:
+    cmp dword [esi], 'TIME'
+    jne .skip_line
+    cmp word [esi+4], 'R:'
+    jne .skip_line
+    add esi, 6
+
+.skip_spaces:
+    cmp byte [esi], ' '
+    jne .copy_delay
+    inc esi
+    jmp .skip_spaces
+
+.copy_delay:
+    lea edi, [default_delay]
+    mov ecx, 0
+
+.copy_loop:
+    mov al, [esi]
+    cmp al, '0'
+    jb .copy_done
+    cmp al, '9'
+    ja .copy_done
+    mov [edi], al
+    inc esi
+    inc edi
+    inc ecx
+    cmp ecx, 5
+    jb .copy_loop
+
+.copy_done:
+    mov byte [edi], 0
+    jmp .skip_line
 
 .skip_line:
-    mov     al, [esi]
-    test    al, al
-    jz      .exit_proc
-    inc     esi
-    cmp     al, 10
-    jne     .skip_line
-    jmp     .parse_lines
+    mov al, [esi]
+    test al, al
+    jz .exit_proc
+    inc esi
+    cmp al, 10
+    jne .skip_line
+    jmp .parse_lines
 
 .close_file:
-    invoke  CloseHandle, [file_handle]
+    invoke CloseHandle, [file_handle]
+
 .exit_proc:
-    pop     edx ecx ebx esi
+    pop edx ecx ebx esi
     ret
 endp
+
 
 proc ParseHexValue
     push    ebx edi

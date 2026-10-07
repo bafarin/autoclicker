@@ -2,6 +2,7 @@ LMB:"0x70"
 RMB:"0x71"
 F:  "0x72"
 
+TIMER: 1500
 
 ;Пример: 0x70 = 'F1'
 ;сайт с кодами клавиш: https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
